@@ -1,0 +1,68 @@
+# ModelFailover provider 配置
+#
+# 密钥不写在这里 —— 按 环境变量 → secrets.env → openclaw.json 的顺序解析（见 mf/config.py）
+#
+# style     : openai | anthropic（两套协议都支持）
+# strengths : 该 provider 的强项标签，用于任务语义路由（code / creative / analysis / general）
+# priority  : 同层内的顺序，越小越优先
+
+defaults:
+  # 上游读超时：要盖住长上下文分析的耗时（日报的 Kimi K2.6 分析要几十秒到几分钟）
+  # 连接超时在代码里单独设成 10s —— 死上游会立刻报错，不会白等
+  # 上游读超时（秒）。2026-11-15 首次生产跑：日报分析实际耗时 249s，
+  # 而当时预算是 300s —— 只剩 17% 余量，明天稍微大一点的内容就会超时。
+  # 这里给 420s（观测值的 1.7 倍），调用方（日报）会配更高的 450s，
+  # 保证**网关总是先回答**，两边不会同时踩到 deadline 互相抢跑。
+  timeout_seconds: 420
+  max_attempts: 3
+  health_interval_seconds: 60
+
+host: 127.0.0.1
+port: 8800
+# 路径支持 ~ 与相对路径（相对路径按仓库根解析）；也可被环境变量覆盖
+# （MF_AUDIT_DB / MF_SECRETS_FILE / MF_OPENCLAW_CONFIG）
+audit_db: data/audit.db
+secrets_file: ~/.openclaw/secrets.env
+openclaw_config: ~/.openclaw/openclaw.json
+# local_token_env: MF_LOCAL_TOKEN   # 打开后，调用方必须在 Authorization 里带这个 token
+
+providers:
+  - name: minimax
+    style: anthropic
+    base_url: https://api.minimaxi.com/anthropic
+    api_key_ref: openclaw:minimax_domestic
+    model: MiniMax-M3.1
+    models: [MiniMax-M3.1, MiniMax-M2.7]
+    strengths: [analysis, general, code]
+    priority: 10
+    notes: "主力模型；今天 18:02 就是它超时，给用户发了 LLM request timed out"
+
+  - name: siliconflow
+    style: openai
+    base_url: https://api.siliconflow.cn/v1
+    api_key_env: [SILICONFLOW_LLM_KEY, SILICONFLOW_API_KEY]
+    model: Pro/moonshotai/Kimi-K2.6
+    models: [Pro/moonshotai/Kimi-K2.6, deepseek-ai/DeepSeek-V3.2, zai-org/GLM-4.6]
+    strengths: [analysis, general, creative]
+    priority: 20
+    notes: "日报流水线当前在用的 provider"
+
+  - name: deepseek
+    style: openai
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    model: deepseek-chat
+    models: [deepseek-chat, deepseek-reasoner]
+    strengths: [code, general]
+    priority: 30
+    notes: "代码任务首选"
+
+  - name: tencent-coding
+    style: openai
+    base_url: https://api.lkeap.cloud.tencent.com/coding/v3
+    api_key_ref: openclaw:tencentcodingplan
+    model: tc-code-latest
+    strengths: [code]
+    priority: 40
+    enabled: false
+    notes: "配额已耗尽（429），默认关掉；恢复配额再开"

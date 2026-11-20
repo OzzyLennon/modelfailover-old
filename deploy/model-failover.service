@@ -1,0 +1,18 @@
+[Unit]
+Description=ModelFailover Gateway (多 provider 灾备与任务语义路由网关)
+Documentation=file:///opt/model-failover/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/model-failover
+ExecStart=/usr/bin/python3 -m mf serve
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/opt/model-failover/data/gateway.log
+StandardError=append:/opt/model-failover/data/gateway.log
+
+[Install]
+WantedBy=default.target
